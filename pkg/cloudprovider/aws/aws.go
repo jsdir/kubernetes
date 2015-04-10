@@ -37,7 +37,7 @@ import (
 // Abstraction over EC2, to allow mocking/other implementations
 type EC2 interface {
 	// Query EC2 for instances matching the filter
-	Instances(instIds []string, filter *ec2InstanceFilter) (instances []*ec2.Instance, err error)
+	Instances(instanceIds []*string, filter *ec2InstanceFilter) (instances []*ec2.Instance, err error)
 }
 
 // Abstraction over the AWS metadata service
@@ -48,7 +48,7 @@ type AWSMetadata interface {
 
 // AWSCloud is an implementation of Interface, TCPLoadBalancer and Instances for Amazon Web Services.
 type AWSCloud struct {
-	ec2              *awsSdkEC2
+	ec2              EC2
 	cfg              *AWSCloudConfig
 	availabilityZone string
 	region           string
