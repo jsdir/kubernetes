@@ -48,7 +48,7 @@ type AWSMetadata interface {
 
 // AWSCloud is an implementation of Interface, TCPLoadBalancer and Instances for Amazon Web Services.
 type AWSCloud struct {
-	ec2              EC2
+	ec2              *awsSdkEC2
 	cfg              *AWSCloudConfig
 	availabilityZone string
 	region           string
@@ -69,7 +69,7 @@ type ec2InstanceFilter struct {
 
 // True if the passed instance matches the filter
 func (f *ec2InstanceFilter) Matches(instance *ec2.Instance) bool {
-	if f.PrivateDNSName != "" && instance.PrivateDNSName != f.PrivateDNSName {
+	if f.PrivateDNSName != "" && *instance.PrivateDNSName != f.PrivateDNSName {
 		return false
 	}
 	return true
@@ -81,11 +81,11 @@ type awsSdkEC2 struct {
 }
 
 // Implementation of EC2.Instances
-func (self *awsSdkEC2) Instances(instanceIds []string, filter *ec2InstanceFilter) (instances []*ec2.Instance, err error) {
+func (self *awsSdkEC2) Instances(instanceIds []*string, filter *ec2InstanceFilter) (instances []*ec2.Instance, err error) {
 	var filters []*ec2.Filter
 	if filter != nil && filter.PrivateDNSName != "" {
 		filters = []*ec2.Filter{
-			&ec2.Filter{
+			{
 				Name: aws.String("private-dns-name"),
 				Values: []*string{
 					aws.String(filter.PrivateDNSName),
@@ -94,17 +94,32 @@ func (self *awsSdkEC2) Instances(instanceIds []string, filter *ec2InstanceFilter
 		}
 	}
 
-	// TODO: handle paged responses
-	res, err := self.ec2.DescribeInstances(&ec2.DescribeInstancesInput{
-		InstanceIDs: instanceIds,
-		Filters:     filters,
-	})
+	fetchedInstances := []*ec2.Instance{}
+	nextToken := ""
 
-	if err != nil {
-		return nil, err
+	for {
+		res, err := self.ec2.DescribeInstances(&ec2.DescribeInstancesInput{
+			InstanceIDs: instanceIds,
+			Filters:     filters,
+			NextToken:   &nextToken,
+		})
+
+		if err != nil {
+			return nil, err
+		}
+
+		for _, reservation := range res.Reservations {
+			fetchedInstances = append(fetchedInstances, reservation.Instances...)
+		}
+
+		if *res.NextToken == "" {
+			break
+		}
+
+		nextToken = *res.NextToken
 	}
 
-	return res.Instances, nil
+	return fetchedInstances, nil
 }
 
 type awsSdkMetadata struct {
@@ -119,7 +134,7 @@ func (self *awsSdkMetadata) GetMetaData(key string) ([]byte, error) {
 	return v, nil
 }
 
-type AuthFunc func() (auth aws.Auth, err error)
+type AuthFunc func() (creds aws.CredentialsProvider)
 
 func init() {
 	cloudprovider.RegisterCloudProvider("aws", func(config io.Reader) (cloudprovider.Interface, error) {
@@ -128,8 +143,8 @@ func init() {
 	})
 }
 
-func getAuth() (creds *aws.Credentials, err error) {
-	return aws.DetectCreds("", "", "").Credentials()
+func getAuth() (creds aws.CredentialsProvider) {
+	return aws.DetectCreds("", "", "")
 }
 
 // readAWSCloudConfig reads an instance of AWSCloudConfig from config reader.
@@ -160,7 +175,7 @@ func readAWSCloudConfig(config io.Reader, metadata AWSMetadata) (*AWSCloudConfig
 	return &cfg, nil
 }
 
-func getAvailabilityZone(metadata *AWSMetadata) (string, error) {
+func getAvailabilityZone(metadata AWSMetadata) (string, error) {
 	availabilityZoneBytes, err := metadata.GetMetaData("placement/availability-zone")
 	if err != nil {
 		return "", err
@@ -178,10 +193,7 @@ func newAWSCloud(config io.Reader, authFunc AuthFunc, metadata AWSMetadata) (*AW
 		return nil, fmt.Errorf("unable to read AWS cloud provider config file: %v", err)
 	}
 
-	creds, err := authFunc()
-	if err != nil {
-		return nil, err
-	}
+	creds := authFunc()
 
 	zone := cfg.Global.Zone
 	if len(zone) <= 1 {
@@ -198,11 +210,11 @@ func newAWSCloud(config io.Reader, authFunc AuthFunc, metadata AWSMetadata) (*AW
 	// TODO: ec2 implementation
 	return &AWSCloud{
 		ec2: &awsSdkEC2{ec2: ec2.New(&aws.Config{
-			Region:      region,
+			Region:      regionName,
 			Credentials: creds,
 		})},
 		cfg:              cfg,
-		region:           region,
+		region:           regionName,
 		availabilityZone: zone,
 	}, nil
 }
@@ -232,9 +244,9 @@ func (aws *AWSCloud) NodeAddresses(name string) ([]api.NodeAddress, error) {
 	if err != nil {
 		return nil, err
 	}
-	ip := net.ParseIP(instance.PrivateIpAddress)
+	ip := net.ParseIP(*instance.PrivateIPAddress)
 	if ip == nil {
-		return nil, fmt.Errorf("invalid network IP: %s", instance.PrivateIpAddress)
+		return nil, fmt.Errorf("invalid network IP: %s", *instance.PrivateIPAddress)
 	}
 
 	return []api.NodeAddress{{Type: api.NodeLegacyHostIP, Address: ip.String()}}, nil
@@ -246,7 +258,7 @@ func (aws *AWSCloud) ExternalID(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return instance.InstanceId, nil
+	return *instance.InstanceID, nil
 }
 
 // Return the instances matching the relevant private dns name. TODO: replace instance implementation
@@ -262,17 +274,17 @@ func (aws *AWSCloud) getInstancesByDnsName(name string) (*ec2.Instance, error) {
 	matchingInstances := []*ec2.Instance{}
 	for _, instance := range instances {
 		// TODO: Push running logic down into filter?
-		if !isAlive(&instance) {
+		if !isAlive(instance) {
 			continue
 		}
 
-		if instance.PrivateDNSName != name {
+		if *instance.PrivateDNSName != name {
 			// TODO: Should we warn here? - the filter should have caught this
 			// (this will happen in the tests if they don't fully mock the EC2 API)
 			continue
 		}
 
-		matchingInstances = append(matchingInstances, &instance)
+		matchingInstances = append(matchingInstances, instance)
 	}
 
 	if len(matchingInstances) == 0 {
@@ -287,7 +299,7 @@ func (aws *AWSCloud) getInstancesByDnsName(name string) (*ec2.Instance, error) {
 // Check if the instance is alive (running or pending)
 // We typically ignore instances that are not alive
 func isAlive(instance *ec2.Instance) bool {
-	switch instance.State.Name {
+	switch *instance.State.Name {
 	case "shutting-down", "terminated", "stopping", "stopped":
 		return false
 	case "pending", "running":
@@ -321,27 +333,27 @@ func (aws *AWSCloud) getInstancesByRegex(regex string) ([]string, error) {
 	matchingInstances := []string{}
 	for _, instance := range instances {
 		// TODO: Push filtering down into EC2 API filter?
-		if !isAlive(&instance) {
+		if !isAlive(instance) {
 			glog.V(2).Infof("skipping EC2 instance (%s): %s",
-				instance.State.Name, instance.InstanceId)
+				instance.State.Name, instance.InstanceID)
 			continue
 		}
 
 		// Only return fully-ready instances when listing instances
 		// (vs a query by name, where we will return it if we find it)
-		if instance.State.Name == "pending" {
-			glog.V(2).Infof("skipping EC2 instance (pending): %s", instance.InstanceId)
+		if *instance.State.Name == "pending" {
+			glog.V(2).Infof("skipping EC2 instance (pending): %s", instance.InstanceID)
 			continue
 		}
-		if instance.PrivateDNSName == "" {
+		if *instance.PrivateDNSName == "" {
 			glog.V(2).Infof("skipping EC2 instance (no PrivateDNSName): %s",
-				instance.InstanceId)
+				instance.InstanceID)
 			continue
 		}
 
 		for _, tag := range instance.Tags {
-			if tag.Key == "Name" && re.MatchString(tag.Value) {
-				matchingInstances = append(matchingInstances, instance.PrivateDNSName)
+			if *tag.Key == "Name" && re.MatchString(*tag.Value) {
+				matchingInstances = append(matchingInstances, *instance.PrivateDNSName)
 				break
 			}
 		}
@@ -363,7 +375,7 @@ func (aws *AWSCloud) GetNodeResources(name string) (*api.NodeResources, error) {
 		return nil, err
 	}
 
-	resources, err := getResourcesByInstanceType(instance.InstanceType)
+	resources, err := getResourcesByInstanceType(*instance.InstanceType)
 	if err != nil {
 		return nil, err
 	}
