@@ -54,6 +54,34 @@
 			"Rev": "c0ef4539dfab4d21c8ef20ba2924f9fc6f186d35"
 		},
 		{
+			"ImportPath": "github.com/awslabs/aws-sdk-go/aws",
+			"Rev": "a79c7d95c012010822e27aaa5551927f5e8a6ab6"
+		},
+		{
+			"ImportPath": "github.com/awslabs/aws-sdk-go/internal/endpoints",
+			"Rev": "a79c7d95c012010822e27aaa5551927f5e8a6ab6"
+		},
+		{
+			"ImportPath": "github.com/awslabs/aws-sdk-go/internal/protocol/ec2query",
+			"Rev": "a79c7d95c012010822e27aaa5551927f5e8a6ab6"
+		},
+		{
+			"ImportPath": "github.com/awslabs/aws-sdk-go/internal/protocol/query/queryutil",
+			"Rev": "a79c7d95c012010822e27aaa5551927f5e8a6ab6"
+		},
+		{
+			"ImportPath": "github.com/awslabs/aws-sdk-go/internal/protocol/xml/xmlutil",
+			"Rev": "a79c7d95c012010822e27aaa5551927f5e8a6ab6"
+		},
+		{
+			"ImportPath": "github.com/awslabs/aws-sdk-go/internal/signer/v4",
+			"Rev": "a79c7d95c012010822e27aaa5551927f5e8a6ab6"
+		},
+		{
+			"ImportPath": "github.com/awslabs/aws-sdk-go/service/ec2",
+			"Rev": "a79c7d95c012010822e27aaa5551927f5e8a6ab6"
+		},
+		{
 			"ImportPath": "github.com/beorn7/perks/quantile",
 			"Rev": "b965b613227fddccbfffe13eae360ed3fa822f8d"
 		},
@@ -324,14 +352,6 @@
 		{
 			"ImportPath": "github.com/miekg/dns",
 			"Rev": "3f504e8dabd5d562e997d19ce0200aa41973e1b2"
-		},
-		{
-			"ImportPath": "github.com/mitchellh/goamz/aws",
-			"Rev": "703cfb45985762869e465f37ed030ff01615ff1e"
-		},
-		{
-			"ImportPath": "github.com/mitchellh/goamz/ec2",
-			"Rev": "703cfb45985762869e465f37ed030ff01615ff1e"
 		},
 		{
 			"ImportPath": "github.com/mitchellh/mapstructure",
